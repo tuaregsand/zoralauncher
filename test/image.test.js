@@ -1,6 +1,6 @@
 import request from 'supertest';
 import fs from 'fs';
-import app from '../server.js';
+import app from '../src/app.js';
 
 process.env.DEPLOYER_PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY || '0x' + '22'.repeat(32);
 process.env.SKIP_CHAIN = 'true';

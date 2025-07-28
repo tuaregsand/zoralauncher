@@ -1,5 +1,5 @@
 import request from 'supertest';
-import app from '../server.js';
+import app from '../src/app.js';
 
 // Dummy env vars for SDK setup
 process.env.DEPLOYER_PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY || '0x' + '11'.repeat(32);
