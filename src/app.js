@@ -40,7 +40,7 @@ const launchLimiter = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  store: new RedisStore({ sendCommand: (...args) => redis.call(...args) })
+  store: new RedisStore({ client: redis })
 });
 
 // Simple API key middleware

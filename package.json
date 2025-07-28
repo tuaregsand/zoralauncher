@@ -22,7 +22,7 @@
     "viem": "^2.21.55",
     "envalid": "*",
     "pino": "^8.16.0",
-    "ioredis": "^5.3.2",
+    "redis": "^4.6.7",
     "rate-limit-redis": "^2.1.0"
   },
   "devDependencies": {
