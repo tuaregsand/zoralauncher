@@ -2,18 +2,38 @@ import express from 'express';
 import multer from 'multer';
 import cors from 'cors';
 import dotenv from 'dotenv';
+// Load environment variables before anything else (especially before dynamic import)
+dotenv.config();
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 // Node does not provide the File class globally in most runtimes. fetch-blob already ships with a
 // standards-compliant implementation, so we re-export it here. This guarantees the `new File()`
 // calls below work regardless of the Node version used in production (Vercel, Railway, etc.).
-import { File } from 'fetch-blob/file.js';
-import { createCoin, DeployCurrency, InitialPurchaseCurrency, createMetadataBuilder, createZoraUploaderForCreator, validateMetadataURIContent } from '@zoralabs/coins-sdk';
+import { File as PolyFile } from 'fetch-blob/file.js';
+// Force override to ensure the same class is used across the app and the SDK
+globalThis.File = PolyFile;
+// Import Zora SDK dynamically after polyfilling File so that the SDK captures the correct File class
+const {
+  createCoin,
+  DeployCurrency,
+  InitialPurchaseCurrency,
+  createMetadataBuilder,
+  createZoraUploaderForCreator,
+  validateMetadataURIContent,
+  setApiKey
+} = await import('@zoralabs/coins-sdk');
+
+// Configure Zora API key for metadata uploads
+if (process.env.ZORA_API_KEY) {
+  setApiKey(process.env.ZORA_API_KEY);
+  console.log('✓ Zora API key set');
+} else {
+  console.warn('⚠️  ZORA_API_KEY not found – falling back to inline metadata');
+}
 import { createWalletClient, createPublicClient, http } from 'viem';
 import { base } from 'viem/chains';
 import { privateKeyToAccount } from 'viem/accounts';
 
-dotenv.config();
 
 const app = express();
 const upload = multer({
@@ -130,17 +150,16 @@ app.post('/api/launch', launchLimiter, checkApiKey, upload.single('logo'), async
       hasImage: !!imageBuffer
     });
 
-    // Use the metadata builder as shown in the official documentation
+    // -------- Metadata build --------
     const metadataBuilder = createMetadataBuilder()
       .withName(name)
       .withSymbol(symbol)
       .withDescription(description || "");
 
-    // At this point we are guaranteed to have `imageBuffer`.
     try {
       const mimeType = req.file?.mimetype || 'image/png';
       const fileName = req.file?.originalname || 'token.png';
-      const file = new File([imageBuffer], fileName, { type: mimeType });
+      const file = new globalThis.File([imageBuffer], fileName, { type: mimeType });
       metadataBuilder.withImage(file);
       console.log('Image added to metadata builder successfully');
     } catch (imageError) {
@@ -150,14 +169,14 @@ app.post('/api/launch', launchLimiter, checkApiKey, upload.single('logo'), async
       });
     }
 
-    // Upload metadata to get a proper ValidMetadataURI (IPFS URI)
+    // Upload metadata → get URI
     let createMetadataParameters;
     try {
       console.log('Uploading metadata to Zora...');
-      const result = await metadataBuilder
-        .upload(createZoraUploaderForCreator(account.address));
+      const result = await metadataBuilder.upload(
+        createZoraUploaderForCreator(account.address)
+      );
       createMetadataParameters = result.createMetadataParameters;
-
       console.log('Metadata uploaded successfully:', {
         name: createMetadataParameters.name,
         symbol: createMetadataParameters.symbol,
@@ -165,13 +184,16 @@ app.post('/api/launch', launchLimiter, checkApiKey, upload.single('logo'), async
       });
     } catch (uploadError) {
       console.error('Error uploading metadata:', uploadError);
-      // Use fallback metadata if upload fails
-      const fallbackMetadata = `data:application/json;base64,${Buffer.from(JSON.stringify({
-        name,
-        symbol,
-        description: description || "",
-        image: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
-      })).toString('base64')}`;
+      // Fallback inline metadata
+      const fallbackMetadata = `data:application/json;base64,${Buffer.from(
+        JSON.stringify({
+          name,
+          symbol,
+          description: description || "",
+          image:
+            'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+        })
+      ).toString('base64')}`;
 
       createMetadataParameters = {
         name,
@@ -181,7 +203,16 @@ app.post('/api/launch', launchLimiter, checkApiKey, upload.single('logo'), async
       console.log('Using fallback metadata');
     }
 
-    // Use the uploaded metadata parameters
+    // ---- Test shortcut ----
+    if (process.env.SKIP_CHAIN === 'true') {
+      return res.status(200).json({
+        metadataUri: createMetadataParameters.uri,
+        message:
+          'Metadata uploaded; chain interaction skipped due to SKIP_CHAIN=true'
+      });
+    }
+
+    // -------- Create coin --------
     const coinParams = {
       ...createMetadataParameters,
       payoutRecipient: recipient,
@@ -209,7 +240,7 @@ app.post('/api/launch', launchLimiter, checkApiKey, upload.single('logo'), async
       deployment: result.deployment
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       address: result.address,
       hash: result.hash,
       deployment: result.deployment,
@@ -217,44 +248,46 @@ app.post('/api/launch', launchLimiter, checkApiKey, upload.single('logo'), async
     });
 
   } catch (err) {
-    console.error("Launch error:", err);
-    res.status(500).json({
-      message: "Token launch failed.",
+    console.error('Launch error:', err);
+    return res.status(500).json({
+      message: 'Token launch failed.',
       error: err.message
     });
   }
 });
 
+// ---------- Health & Root routes ----------
 app.get('/api/health', (req, res) => {
-  res.status(200).json({ 
+  res.status(200).json({
     status: 'ok',
     message: 'Zora Launcher Backend is running',
     walletConfigured: !!account,
-    address: account?.address,
-    note: 'Ready for Zora SDK integration',
-    sdkInfo: {
-      package: '@zoralabs/coins-sdk',
-      docs: 'https://docs.zora.co/coins/sdk/create-coin',
-      status: 'Ready for integration'
-    }
+    address: account?.address
   });
 });
 
-// Simple root route so visiting the base URL doesn't return 404
-app.get('/', (req, res) => {
-  res.status(200).send(
-    `<h1>Zora Launcher Backend</h1><p>API is alive ✨</p><p>Visit <a href="/api/health">/api/health</a> for JSON health information.</p>`
-  );
+app.get('/', (_req, res) => {
+  res
+    .status(200)
+    .send(
+      '<h1>Zora Launcher Backend</h1><p>API is alive ✨ – see <a href="/api/health">/api/health</a>.</p>'
+    );
 });
 
-// Centralized error handler (must be after all routes & middleware)
-app.use((err, req, res, next) => {
+// Central error handler
+app.use((err, _req, res, _next) => {
   console.error('Unhandled error:', err);
-  const status = err.status || 500;
-  res.status(status).json({
-    error: err.message || 'Internal Server Error'
-  });
+  res
+    .status(err.status || 500)
+    .json({ error: err.message || 'Internal Server Error' });
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+// Start server only if not running inside tests
+if (process.env.NODE_ENV !== 'test') {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () =>
+    console.log(`Server running on http://localhost:${PORT}`)
+  );
+}
+
+export default app;
