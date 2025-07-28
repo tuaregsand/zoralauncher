@@ -11,11 +11,12 @@ RUN npm ci --only=production
 # Copy source code
 COPY src/ ./src/
 
-# Create non-root user
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nodejs -u 1001
+RUN apk add --no-cache curl
 
-# Change ownership of the app directory
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
+
+# Change ownership and switch user
 RUN chown -R nodejs:nodejs /app
 USER nodejs
 
@@ -23,7 +24,6 @@ USER nodejs
 EXPOSE 3000
 
 # Health check (use curl since we're using ES modules)
-RUN apk add --no-cache curl
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:3000/api/health || exit 1
 

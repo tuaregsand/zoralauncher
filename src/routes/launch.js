@@ -18,7 +18,12 @@ router.post('/', limiter, upload.single('logo'), async (req, res) => {
 
     const file = new File([imageBuffer], req.file.originalname || 'token.png', { type: req.file.mimetype });
     const result = await launchToken({ name, symbol, description, recipient, file });
-    res.json({ ...result, message: 'Token launched!' });
+    // Express/JSON.stringify cannot serialize BigInt. Convert any BigInt values to strings.
+    const safeResult = JSON.parse(
+      JSON.stringify(result, (_, v) => (typeof v === 'bigint' ? v.toString() : v))
+    );
+    logger.info({ name, symbol, address: safeResult.address }, 'Token launched');
+    res.json({ ...safeResult, message: 'Token launched!' });
   } catch (err) {
     logger.error(err, 'launch route error');
     res.status(500).json({ error: err.message });
