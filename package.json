@@ -23,7 +23,7 @@
     "envalid": "*",
     "pino": "^8.16.0",
     "redis": "^4.6.7",
-    "rate-limit-redis": "^2.1.0"
+    "rate-limit-redis": "^4.2.1"
   },
   "devDependencies": {
     "jest": "^29.7.0",

@@ -2,8 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import { RedisStore } from 'rate-limit-redis';
 import { errorHandler } from './middlewares/error.js';
-import RedisStore from 'rate-limit-redis';
 import { redis } from './config/redis.js';
 import pino from 'pino';
 
@@ -40,7 +40,14 @@ const launchLimiter = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  store: new RedisStore({ client: redis })
+  // The old RedisStore API expected a `client` property that exposed node-redis v3 style commands.
+  // In node-redis v4 the command builder changed and certain chainable helpers like `pttl` were removed,
+  // which is what caused the runtime error you saw: `multi(...).incr(...).pttl is not a function`.
+  // The newer `rate-limit-redis` API lets us pass a minimal `sendCommand` wrapper that works with v4.
+  store: new RedisStore({
+    // Forward raw Redis commands to the underlying client
+    sendCommand: (...args) => redis.sendCommand(args)
+  })
 });
 
 // Simple API key middleware
