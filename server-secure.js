@@ -2,13 +2,44 @@ import express from 'express';
 import multer from 'multer';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 
 dotenv.config();
 
 const app = express();
-const upload = multer({ storage: multer.memoryStorage() });
-app.use(cors());
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }
+});
+
+app.use(helmet());
+
+const allowedOrigins = new Set([
+  'http://localhost',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'https://www.incrypt.net',
+  'https://app.incrypt.net'
+]);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+    callback(new Error('Not allowed by CORS'));
+  }
+}));
+
 app.use(express.json());
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 50,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+app.use('/api/launch', limiter);
 
 // Secure endpoint that doesn't require server-side private keys
 app.post('/api/launch', upload.single('logo'), async (req, res) => {
@@ -86,6 +117,20 @@ app.get('/api/health', (req, res) => {
     status: 'ok',
     message: 'Secure Zora Launcher Backend is running',
     security: 'No private keys stored on server'
+  });
+});
+
+// Root route for simple status page
+app.get('/', (req, res) => {
+  res.status(200).send(
+    `<h1>Zora Launcher Backend (Secure)</h1><p>API is alive ✨</p><p>Visit <a href="/api/health">/api/health</a> for JSON health information.</p>`
+  );
+});
+
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(err.status || 500).json({
+    error: err.message || 'Internal Server Error'
   });
 });
 
