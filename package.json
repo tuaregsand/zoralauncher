@@ -1,0 +1,26 @@
+{
+  "name": "zora-launcher-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "start:secure": "node server-secure.js",
+    "dev": "node server.js",
+    "build": "echo 'No build step required'",
+    "test": "echo 'No tests specified'"
+  },
+  "dependencies": {
+    "@zoralabs/coins-sdk": "^0.2.9",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3",
+    "ethers": "^6.7.0",
+    "express": "^4.18.2",
+    "fetch-blob": "^3.2.0",
+    "multer": "^1.4.5-lts.1",
+    "viem": "^2.21.55"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
